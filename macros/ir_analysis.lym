@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>IR Analysis</description>
+ <version>0.1.0</version>
+ <category>macros</category>
+ <prolog/>
+ <epilog/>
+ <doc>Run kpex + ir_check.py on the active cell.
+
+External binaries required on PATH (or via env var override):
+  - kpex
+  - magic
+  - ngspice
+ </doc>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name>tools_menu</group-name>
+ <menu-path>tools_menu.end</menu-path>
+ <interpreter>ruby</interpreter>
+ <dsl-interpreter-name/>
+ <text>
+require "fileutils"
+require "shellwords"
+
+def parent_w
+  RBA::Application.instance.main_window
+end
+
+def show_box(title, body, icon, detail = nil)
+  mb = RBA::QMessageBox.new(parent_w)
+  mb.windowTitle = title
+  mb.text = body
+  mb.detailedText = detail if detail
+  mb.icon = icon
+  mb.exec
+end
+
+def show_error(t, b);  show_box(t, b, RBA::QMessageBox::Critical);     end
+
+# Find an executable: PATH first; then a list of known fallback dirs.
+# This makes the package work whether KLayout was launched from a conda
+# shell or from Spotlight/Finder (which has a stripped PATH on macOS).
+def which(bin, extra_dirs = [])
+  paths = ENV["PATH"].to_s.split(File::PATH_SEPARATOR) + extra_dirs
+  paths.each do |d|
+    cand = File.join(d, bin)
+    return cand if File.file?(cand) &amp;&amp; File.executable?(cand)
+  end
+  nil
+end
+
+def run_ir_analysis
+  # TODO: move to a config dialog
+  vdd_v     = 3.3
+  ion_a     = 50e-6
+  vdd_port  = "VDD" # TODO could detect this from the .magicrc
+  pdk_name  = ENV["PDK"]
+
+  # Companion python script lives next to this .lym (PKG/scripts/ir_check.py).
+  package_dir = File.expand_path(File.join(File.dirname(__FILE__), ".."))
+  ir_check_py = File.join(package_dir, "scripts", "ir_check.py")
+  fallback_dirs = [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/opt/local/bin",
+  ]
+  # ============================================================================
+
+  # Make sure subprocesses can see the conda/homebrew bins on macOS GUI launches.
+  ENV["PATH"] = (fallback_dirs + [ENV["PATH"].to_s]).join(File::PATH_SEPARATOR)
+
+  # --- Locate tools ---
+  kpex_bin   = which("kpex",    fallback_dirs)    or raise "kpex not found on PATH.\nInstall klayout-pex (e.g. via pip in your conda env)."
+  python_bin = which("python3", fallback_dirs)    or raise "python3 not found on PATH."
+  magic = which("magic", fallback_dirs) or raise "magic not found on PATH."
+  raise "Companion script missing: #{ir_check_py}"  unless File.exist?(ir_check_py)
+  raise "ngspice not found on PATH."                unless which("ngspice", fallback_dirs)
+
+  # --- Active cell ---
+  view = RBA::Application.instance.main_window.current_view
+  raise "No layout open." if view.nil? || view.active_cellview.nil?
+  cv = view.active_cellview
+  raise "Active cellview has no cell." if cv.cell.nil?
+  raise "Layout is unsaved (no on-disk filename)." if cv.filename.nil? || cv.filename.empty?
+
+  gds_path  = cv.filename
+  gds_basename = File.basename(gds_path, ".gds")
+  cell_name = cv.cell.name
+
+  # ---- Build the results dialog ----
+  @dlg = RBA::QDialog.new(parent_w)
+  @dlg.windowTitle = "IR Analysis - #{cell_name}"
+  @dlg.resize(1000, 800)
+
+  @log_output = RBA::QTextEdit.new
+  @log_output.readOnly = true
+  @log_output.textInteractionFlags = RBA::Qt::TextSelectableByMouse | RBA::Qt::TextSelectableByKeyboard
+  @log_output.setStyleSheet("font-family: monospace;")
+
+  layout = RBA::QVBoxLayout.new(@dlg)
+  layout.addWidget(@log_output)
+
+  @dlg.show
+  RBA::QApplication.processEvents
+
+  # Helper: append a line AND flush Qt's event queue so it actually paints.
+  log = lambda do |text|
+    @log_output.append(text)
+    RBA::QApplication.processEvents
+  end
+
+  safe_top = cell_name.to_s.strip.empty? ? 'TOP' : cell_name.gsub(/[^A-Za-z0-9_.-]/, '_')
+  timestamp = Time.now.strftime('%Y_%m_%d_%H_%M_%S')
+  out_dir = File.expand_path("ir_analysis_run_#{safe_top}_#{timestamp}")
+  extracted_spice_path = File.join(out_dir, "#{cell_name}.R.spice")
+  FileUtils.mkdir_p(out_dir)
+
+  log.call("=" * 70)
+  log.call("IR Analysis")
+  log.call("  GDS      : #{gds_path}")
+  log.call("  cell     : #{cell_name}")
+  log.call("  kpex     : #{kpex_bin}")
+  log.call("  magic    : #{magic}")
+  log.call("  python   : #{python_bin}")
+  log.call("  out      : #{out_dir}")
+  log.call("  PDK_ROOT : #{ENV["PDK_ROOT"] || "(not set)"}")
+  log.call("  PDK      : #{ENV["PDK"] || "(not set)"}")
+  log.call("=" * 70)
+
+  # --- 1) kpex ---
+  log.call("\n[1/2] Invoking klayout-pex")
+  kpex_cmd = [
+    kpex_bin,
+    "--pdk", pdk_name,
+    "--magic",
+    "--magic_mode", "R",
+    "--gds",     gds_path,
+    "--cell",    cell_name,
+    "--out_dir", out_dir,
+    "--out_spice", extracted_spice_path,
+  ].shelljoin + " 2&gt;&amp;1"
+  log.call("Running:\n#{kpex_cmd}\n")
+  t0 = Time.now
+  kpex_out = `#{kpex_cmd}`
+  kpex_dt  = Time.now - t0
+  puts "      done in #{format('%.1f', kpex_dt)}s, exit=#{$?.exitstatus}"
+
+  unless $?.success? &amp;&amp; File.exist?(extracted_spice_path)
+    raise "kpex failed (exit #{$?.exitstatus}).\n\nTail:\n\n#{kpex_out[-1500..-1] || kpex_out}"
+  end
+
+  # --- 2) ir_check.py ---
+  log.call("\n[2/2] ir_check.py (VDD=#{vdd_v}V, Ion=#{ion_a}A per MOSFET)")
+  ir_cmd = [
+    python_bin, ir_check_py,
+    extracted_spice_path, cell_name,
+    "--vdd-port", vdd_port,
+    "--vdd",      vdd_v.to_s,
+    "--ion",      ion_a.to_s,
+    "--out-dir",  File.join(out_dir, "ir"),
+  ].shelljoin + " 2&gt;&amp;1"
+  log.call("Running:\n#{ir_cmd}\n")
+
+  ir_out = `#{ir_cmd}`
+  raise "ir_check.py failed (exit #{$?.exitstatus}).\n\n#{ir_out[-1500..-1] || ir_out}" unless $?.success?
+
+  log.call(ir_out)
+  log.call("=" * 70)
+
+  log.call("\nExtraction: #{format('%.1f', kpex_dt)}s\nRun dir: #{out_dir}\n")
+
+  # TODO avoid the magic (pun intended) strings ...
+  @report_txt = File.join(out_dir, "ir", "ir_analysis_report.txt")
+  @kpex_rdb = File.join(out_dir, "#{gds_basename}__#{cell_name}", "magic_R", "#{cell_name}_MAGIC_report.rdb.gz")
+
+  rdb = RBA::ReportDatabase.new
+  rdb.load(@kpex_rdb)
+
+  @dlg.exec
+end
+
+begin
+  run_ir_analysis
+rescue =&gt; e
+  show_error("IR Analysis - error", e.message)
+end
+ </text>
+</klayout-macro>

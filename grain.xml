@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<salt-grain>
+ <name>klayout-pi</name>
+ <version>0.1.0</version>
+ <api-version>0.28</api-version>
+ <title>IR Drop Analysis</title>
+ <doc>Static IR drop analysis for SG13G2 layouts.
+
+External dependencies (NOT installed by this package — provide separately):
+  - kpex     (klayout-pex, Python package or CLI entry point)
+  - magic    (open-source layout tool)
+  - ngspice  (circuit simulator)
+  - PDK      (defaults to ihp-sg13g2; magicrc looked up via PDK_ROOT)
+
+The macro adds 'IR Analysis' under the Tools menu.
+ </doc>
+ <doc-url/>
+ <author>Saif Khattak</author>
+ <author-contact>saifkhattak.00@gmail.com</author-contact>
+ <license>MIT</license>
+ <hidden>false</hidden>
+ <disabled>false</disabled>
+ <url/>
+</salt-grain>

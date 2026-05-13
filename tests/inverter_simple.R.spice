@@ -1,0 +1,9 @@
+* NGSPICE file created from TOP.ext - technology: ihp-sg13g2
+
+.subckt TOP VDD VSS
+X0 a_n40_n259.t0 a_n66_n295# VDD.t0 w_n202_n42.t0 sg13_lv_pmos ad=0.1005p pd=1.34u as=0.1005p ps=1.34u w=0.15u l=0.13u
+X1 a_n40_n259.t1 a_n66_n295# VSS.t0 sub sg13_lv_nmos ad=0.1005p pd=1.34u as=0.1005p ps=1.34u w=0.15u l=0.13u
+R0 VSS VSS.t0 26.5451
+R1 VDD VDD.t0 26.539
+R2 a_n40_n259.t0 a_n40_n259.t1 36.6761
+.ends

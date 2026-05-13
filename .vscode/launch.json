@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ir_check: inverter (use pre-extracted netlist)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/ir_check.py",
+      "args": [
+        "${workspaceFolder}/tests/inverter_simple.R.spice",
+        "TOP",
+        "--vdd-port", "VDD",
+        "--vdd",      "1.5",
+        "--ion",      "50e-6",
+        "--out-dir",  "${workspaceFolder}/ir_out/inverter"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "kpex: inverter (magic R-mode, debugger-attached)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "klayout_pex",
+      "python": "/opt/homebrew/Caskroom/miniconda/base/envs/klayout/bin/python3",
+      "args": [
+        "--pdk",       "ihp-sg13g2",
+        "--magic", "--magic_mode", "R",
+        "--magicrc",   "/Users/skhattak/.ciel/ciel/ihp-sg13g2/versions/5cccb161f7492697cfa52eb14dc03beb00bdca9e/ihp-sg13g2/libs.tech/magic/ihp-sg13g2.magicrc",
+        "--gds",       "${workspaceFolder}/tests/inverter_simple.gds",
+        "--cell",      "TOP",
+        "--out_dir",   "${workspaceFolder}/ir_out/kpex_debug",
+        "--out_spice", "${workspaceFolder}/ir_out/kpex_debug/inverter_simple.R.spice"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PATH": "/opt/homebrew/Caskroom/miniconda/base/envs/klayout/bin:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:${env:PATH}"
+      }
+    }
+  ]
+}

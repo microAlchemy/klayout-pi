@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-version
+
+# VSCode (keep launch + settings, ignore per-user state)
+.vscode/*.log
+.vscode/.ropeproject/
+.vscode/settings.json
+
+# Tool outputs (regenerated locally)
+ir_out/
+kpex_run/
+*.log
+*.tmp
+
+# macOS
+.DS_Store
+
+# Editor backups
+*~
+*.swp
+*.swo
+
+# Old / extracted artefacts that get rebuilt
+*.ext
+*.res.ext
+*.sim
+*.nodes
+*.pex.spice
+ir.sp
+
+# Allow test fixtures explicitly
+!tests/*.spice
+!tests/*.gds
