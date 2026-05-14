@@ -175,9 +175,58 @@ def run_ir_analysis
   # TODO avoid the magic (pun intended) strings ...
   @report_txt = File.join(out_dir, "ir", "ir_analysis_report.txt")
   @kpex_rdb = File.join(out_dir, "#{gds_basename}__#{cell_name}", "magic_R", "#{cell_name}_MAGIC_report.rdb.gz")
+  raise "kpex did not produce expected RDB: #{@kpex_rdb}" unless File.exist?(@kpex_rdb)
 
-  rdb = RBA::ReportDatabase.new
+  # read the report into a simple map
+  node_to_ir = {}
+  File.foreach(@report_txt) do |line|
+    node, ir = line.split
+    node_to_ir[node] = ir.to_f
+  end
+
+  rdb = RBA::ReportDatabase.new('Nodes of Interest')
   rdb.load(@kpex_rdb)
+
+  # rnodes contains each node as a category
+  rnodes_category = rdb.category_by_path("'MAGIC Extraction'.'Resistor Nodes'")
+
+  # find the polygons for each node we care about from the MAGIC extraction
+  rnode_polys = {}
+  rnodes_category.each_sub_category.each do |rnode_cat|
+    rnode_name = rnode_cat.name
+    rdb.each_item_per_category(rnode_cat.rdb_id).each do |item|
+      item.each_value.map {|val| "#{rnode_name}: #{val.to_s}" }
+
+      if node_to_ir.key?(rnode_name)
+        ir_value = node_to_ir[rnode_name]
+        poly_val = item.each_value.find { |val| !val.polygon.nil? }
+        log.call("Found node #{rnode_name} in rdb (IR=#{ir_value}, Poly=#{poly_val}).")
+        rnode_polys[rnode_name] = poly_val.polygon if poly_val
+      end
+    end
+  end
+
+  # create a new category alongside the magic extraction that shows
+  # the important nodes along with their IR drop
+  rdb_cell_id = rdb.cell_by_qname(cell_name).rdb_id
+  ir_category = rdb.create_category("IR Drops (#{vdd_port})")
+  ir_category_id = ir_category.rdb_id
+  node_to_ir.each do |node, ir|
+    ir_node_subcat = rdb.create_category(ir_category, node)
+    ir_node_subcat_id = ir_node_subcat.rdb_id
+    node_item = rdb.create_item(rdb_cell_id, ir_node_subcat_id)
+    poly = rnode_polys[node]
+    node_item.add_value("IR drop: #{ir} mV")
+    node_item.add_value(poly)
+  end
+
+  augmented = File.join(out_dir, "ir", "ir_analysis.rdb")
+  rdb.save(augmented)
+  log.call("Saved RDB: #{augmented}")
+
+  idx = view.create_rdb("IR Analysis")
+  view.rdb(idx).load(augmented)
+  view.show_rdb(idx, view.active_cellview_index)
 
   @dlg.exec
 end
